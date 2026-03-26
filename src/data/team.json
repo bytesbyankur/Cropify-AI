@@ -1,0 +1,38 @@
+{
+  "teamName": "Pixel Pirates",
+  "university": "Veer Surendra Sai University of Technology (VSSUT)",
+  "members": [
+    {
+      "id": 1,
+      "name": "Ankur Dasgupta",
+      "role": "Team Lead & Presenter",
+      "description": "Project lead and presenter. Coordinated the team and delivered the final presentation, showcasing our innovative crop recommendation system.",
+      "avatarColor": "bg-emerald-500",
+      "image": "public\\Team\\Ankur.jpeg"
+    },
+    {
+      "id": 2,
+      "name": "Priyanka Priyadarsini Bej",
+      "role": "Frontend Architect",
+      "description": "UI/UX designer and frontend lead. Crafted the intuitive user interface using React and Tailwind CSS, ensuring a seamless user experience.",
+      "avatarColor": "bg-blue-500",
+      "image": "public\\Team\\Priyanka.jpeg"
+    },
+    {
+      "id": 3,
+      "name": "Om Bajrang Purohit",
+      "role": "AIML Experrt",
+      "description": "ML specialist. Developed the core image processing and crop recommendation algorithms using TensorFlow and Keras.",
+      "avatarColor": "bg-amber-500",
+      "image": "public\\Team\\Om.jpeg"
+    },
+    {
+      "id": 4,
+      "name": "S. Sahil Prusty",
+      "role": "Backend Developer & Data Curator",
+      "description": "Backend and data specialist. Built the Django server and curated the agricultural datasets for training and testing.",
+      "avatarColor": "bg-purple-500",
+      "image": "public\\Team\\Sahil.jpg"
+    }
+  ]
+}

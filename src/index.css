@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+/* To make sure your dark mode toggle works with Tailwind v4's "dark:" classes */
+@custom-variant dark (&:where(.dark-mode, .dark-mode *));
+
+body {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dark-mode {
+  background-color: #0f172a; 
+  color: #f8fafc; 
+  min-height: 100vh;
+}
+
+.light-mode {
+  background-color: #f8fafc; 
+  color: #0f172a; 
+  min-height: 100vh;
+}
