@@ -1,0 +1,4 @@
+0 Corn healthy
+1 corn leaf blight
+2 corn rust 
+3 corn leaf gray spot

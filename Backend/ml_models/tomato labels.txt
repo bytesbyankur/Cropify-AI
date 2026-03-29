@@ -1,0 +1,10 @@
+0 Tomato healthy
+1 tomato early blight
+2 tomato late blight
+3 tomato bacterial spot
+4 tomato leaf mold
+5 tomato septoria leaf spot
+6 tomato spider mites
+7 tomato target spot
+8 tomato yellow leaf curl virus
+9 tomato mosaic virus

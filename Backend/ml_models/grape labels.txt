@@ -1,0 +1,4 @@
+0 Grape Healthy
+1 Grape Black Rot
+2 Grape esca
+3 Grape Leaf Blight

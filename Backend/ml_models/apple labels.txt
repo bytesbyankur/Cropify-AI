@@ -1,0 +1,4 @@
+0 Apple healthy
+1 Apple Scab
+2 Apple rust
+3 Apple rot

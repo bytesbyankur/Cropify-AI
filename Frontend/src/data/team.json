@@ -21,7 +21,7 @@
     {
       "id": 3,
       "name": "Om Bajrang Purohit",
-      "role": "AIML Experrt",
+      "role": "AIML Expert",
       "description": "ML specialist. Developed the core image processing and crop recommendation algorithms using TensorFlow and Keras.",
       "avatarColor": "bg-amber-500",
       "image": "public\\Team\\Om.jpeg"
