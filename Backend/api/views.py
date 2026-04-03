@@ -6,6 +6,10 @@ from .ml_service import process_image_pipeline
 @api_view(['POST'])
 def predict_disease(request):
     image_file = request.FILES.get('image')
+    
+    # 🔥 THE FIX: Grab the language sent from React's FormData
+    # If for some reason it's missing, it safely defaults to "English"
+    target_language = request.data.get('language', 'English')
 
     if not image_file:
         return Response(
@@ -13,10 +17,10 @@ def predict_disease(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    print(f"✅ Received image: {image_file.name}. Starting AI Pipeline...")
+    print(f"✅ Received image: {image_file.name}. Language requested: {target_language}. Starting AI Pipeline...")
 
-    # Run the image through the CNN + LLM pipeline
-    result = process_image_pipeline(image_file)
+    # 🔥 Pass the language down to the ML service!
+    result = process_image_pipeline(image_file, language=target_language)
 
     if "error" in result:
         return Response(

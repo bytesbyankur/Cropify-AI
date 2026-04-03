@@ -1,23 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { TRANSLATIONS } from './translations';
 
-// --- Custom Typewriter Component ---
-const TypewriterText = ({ text = "", delay = 0 }) => {
+// --- Custom Typewriter Component (Now Bulletproofed!) ---
+const TypewriterText = React.memo(({ text = "", delay = 0 }) => {
   const [displayedText, setDisplayedText] = useState('');
+  const textMemory = useRef(''); // Remembers the text so it doesn't restart on re-renders
 
   useEffect(() => {
-    setDisplayedText('');
-    let i = 0;
-    
-    // Safety check just in case text is undefined or null
     if (!text) return;
 
-    // 🔥 THE FIX: Force whatever Gemini sent into a pure String.
-    // If it's an Array (like ["Step 1", "Step 2"]), join it with line breaks.
     const safeText = Array.isArray(text) ? text.join('\n') : String(text);
-
-    // Now it is 100% safe to run .replace()
     const cleanText = safeText.replace(/\*\*/g, '').replace(/\*/g, '');
+
+    // 🔥 If we already typed this exact text, skip the animation and just show it!
+    if (textMemory.current === cleanText) {
+      setDisplayedText(cleanText);
+      return;
+    }
+
+    textMemory.current = cleanText;
+    setDisplayedText('');
+    let i = 0;
 
     const startTimer = setTimeout(() => {
       const typingInterval = setInterval(() => {
@@ -33,23 +37,103 @@ const TypewriterText = ({ text = "", delay = 0 }) => {
   }, [text, delay]);
 
   return <span>{displayedText}</span>;
-};
-
+});
 
 // --- Main Results Card ---
-const ResultsCard = ({ data, onReset }) => {
+const ResultsCard = ({ data, onReset, language = "English" }) => {
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const audioRef = useRef(null); // 🔥 DEFINED HERE! Controls the Google Cloud Audio
+  const [availableVoices, setAvailableVoices] = useState([]); 
+  
+  // Pre-load offline fallback voices
+  useEffect(() => {
+    const loadVoices = () => setAvailableVoices(window.speechSynthesis.getVoices());
+    loadVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
+
+  // Safety cleanup: Stop audio if user navigates away
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) audioRef.current.pause();
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    };
+  }, []);
+
   if (!data) return null;
 
-  // 🔥 FIX 2: Force the severity to be a single word (cuts off Gemini's rambling paragraphs)
+  const t = TRANSLATIONS[language] || TRANSLATIONS["English"];
+
   const rawSeverity = data.severity || "";
   const cleanSeverity = rawSeverity.split(/[ .\n,]/)[0].replace(/[^a-zA-Z]/g, '');
 
-  // Calculate color using the newly cleaned, single-word severity
   const severityColor = cleanSeverity ? (
-    cleanSeverity.toLowerCase().includes('high') || cleanSeverity.toLowerCase().includes('critical') ? 'bg-red-500 text-white shadow-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.5)]' :
-    cleanSeverity.toLowerCase().includes('medium') || cleanSeverity.toLowerCase().includes('moderate') ? 'bg-amber-500 text-white shadow-amber-500/30' :
+    cleanSeverity.toLowerCase().match(/(high|critical|alta|critique|hoch|tinggi)/) ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)]' :
+    cleanSeverity.toLowerCase().match(/(medium|moderate|media|moyen|mittel|sedang)/) ? 'bg-amber-500 text-white shadow-amber-500/30' :
     'bg-emerald-500 text-white shadow-emerald-500/30'
   ) : '';
+
+  // ==========================================
+  // 🔊 GOOGLE CLOUD + OFFLINE FALLBACK ENGINE
+  // ==========================================
+  const handleTTS = () => {
+    // 1. If currently speaking, stop it!
+    if (isSpeaking) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0; 
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      setIsSpeaking(false);
+      return; 
+    }
+
+    // 2. Play the high-quality Google Cloud audio from Django!
+    if (data.audio_data) {
+      const audio = new Audio(data.audio_data);
+      audioRef.current = audio;
+      
+      audio.onended = () => setIsSpeaking(false);
+      
+      audio.play().catch(err => {
+         console.error("Audio playback failed:", err);
+         setIsSpeaking(false);
+      });
+      
+      setIsSpeaking(true);
+    } 
+    // 3. OFFLINE FALLBACK (If internet drops or backend fails)
+    else if ('speechSynthesis' in window) {
+      const script = `${t.diagConfirmed}: ${data.name}. ${t.symptoms} ${t.treatmentPlan}: ${data.remedy}`;
+      const cleanScript = script.replace(/\*/g, '');
+      const utterance = new SpeechSynthesisUtterance(cleanScript);
+      
+      const voiceMap = { "English": "en", "Spanish": "es", "French": "fr", "German": "de", "Indonesian": "id" };
+      const targetLang = voiceMap[language] || "en";
+      
+      if (availableVoices.length > 0) {
+        const matchingVoices = availableVoices.filter(v => v.lang.startsWith(targetLang));
+        if (matchingVoices.length > 0) {
+          let bestVoice = matchingVoices.find(v => 
+            v.name.toLowerCase().includes('female') || v.name.includes('Samantha') || v.name.includes('Google')
+          );
+          utterance.voice = bestVoice || matchingVoices[0];
+        }
+      }
+      
+      utterance.lang = targetLang; 
+      utterance.rate = 0.9;
+      utterance.pitch = 1.1; 
+      
+      utterance.onend = () => setIsSpeaking(false);
+      window.speechSynthesis.speak(utterance);
+      setIsSpeaking(true);
+    }
+  };
 
   return (
     <motion.div 
@@ -63,17 +147,16 @@ const ResultsCard = ({ data, onReset }) => {
           <div>
             <p className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Diagnosis Confirmed
+              {t.diagConfirmed}
             </p>
             <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
               {data.name}
             </h2>
           </div>
           
-          {/* Renders the badge using cleanSeverity */}
           {cleanSeverity && (
             <span className={`inline-flex items-center justify-center px-4 py-1 rounded-full text-sm font-bold uppercase tracking-wide whitespace-nowrap ${severityColor}`}>
-              {cleanSeverity} Risk
+              {data.severity} {t.risk}
             </span>
           )}
         </div>
@@ -81,7 +164,7 @@ const ResultsCard = ({ data, onReset }) => {
         {/* Confidence Bar */}
         <div className="space-y-2">
           <div className="flex justify-between text-sm font-bold">
-            <span className="text-slate-600 dark:text-slate-400">AI Confidence Score</span>
+            <span className="text-slate-600 dark:text-slate-400">{t.confidenceScore}</span>
             <span className="text-emerald-600 dark:text-emerald-400">{data.confidence}</span>
           </div>
           <div className="w-full h-3 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden shadow-inner">
@@ -103,7 +186,7 @@ const ResultsCard = ({ data, onReset }) => {
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-blue-100 dark:bg-blue-800/50 rounded-lg">🌦️</div>
             <h3 className="text-sm font-bold text-blue-900 dark:text-blue-300 uppercase tracking-wider">
-              Live Weather Context
+              {t.weatherCtx}
             </h3>
           </div>
           <p className="text-sm text-blue-800 dark:text-blue-200/80 font-medium leading-relaxed flex-grow">
@@ -116,7 +199,7 @@ const ResultsCard = ({ data, onReset }) => {
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg">🔬</div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-              Observed Symptoms
+              {t.symptoms}
             </h3>
           </div>
           <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed flex-grow">
@@ -129,7 +212,7 @@ const ResultsCard = ({ data, onReset }) => {
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg">🦠</div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-              Root Cause
+              {t.rootCause}
             </h3>
           </div>
           <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed flex-grow">
@@ -142,7 +225,7 @@ const ResultsCard = ({ data, onReset }) => {
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-emerald-100 dark:bg-emerald-800/50 rounded-lg">🛡️</div>
             <h3 className="text-sm font-bold text-emerald-900 dark:text-emerald-400 uppercase tracking-wider">
-              Treatment Plan
+              {t.treatmentPlan}
             </h3>
           </div>
           <div className="text-sm font-medium text-emerald-800 dark:text-emerald-200/90 leading-relaxed whitespace-pre-line flex-grow">
@@ -153,12 +236,26 @@ const ResultsCard = ({ data, onReset }) => {
       </div>
 
       {/* 3. BOTTOM ACTION BAR */}
-      <div className="p-6 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 flex flex-col md:flex-row gap-4 justify-end">
+      <div className="p-6 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 flex flex-col md:flex-row gap-4 justify-between">
+        
+        {/* DYNAMIC TTS BUTTON */}
+        <button 
+          onClick={handleTTS}
+          className={`w-full md:w-auto px-6 py-3 rounded-xl font-bold transition-all shadow-md flex items-center justify-center gap-2 ${
+            isSpeaking 
+              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-300' 
+              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
+          }`}
+        >
+          <span className="text-xl">{isSpeaking ? '🛑' : '🔊'}</span>
+          {isSpeaking ? t.stopAudio : t.listen}
+        </button>
+
         <button 
           onClick={onReset}
           className="w-full md:w-auto px-8 py-3 rounded-xl font-bold text-white bg-emerald-500 hover:bg-emerald-600 transition-all shadow-md shadow-emerald-500/30 active:scale-95"
         >
-          Scan Another Leaf
+          {t.scanAnother}
         </button>
       </div>
     </motion.div>
