@@ -70,14 +70,16 @@ const Scanner = ({ imagePreview, setImagePreview, isAnalyzing, setIsAnalyzing, s
 
     if (currentNetworkStatus.connected) {
       setScanStatus(`${t.processingBtn} (${language})`);
-      
+
       const formData = new FormData();
       formData.append('image', selectedFile);
       // 🔥 SEND THE CURRENT NAVBAR LANGUAGE TO DJANGO!
       formData.append('language', language);
 
       try {
-        const apiUrl = import.meta.env.VITE_API_URL;
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const apiUrl = baseUrl.endsWith('/') ? `${baseUrl}api/predict/` : `${baseUrl}/api/predict/`;
+
         const response = await axios.post(apiUrl, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
@@ -116,7 +118,7 @@ const Scanner = ({ imagePreview, setImagePreview, isAnalyzing, setIsAnalyzing, s
               const diseaseIndex = diseasePredictions.indexOf(Math.max(...diseasePredictions));
               const confidenceScore = (diseasePredictions[diseaseIndex] * 100).toFixed(2);
               const predictedDiseaseName = DISEASE_LABELS[selectedPlant][diseaseIndex];
-              
+
               const details = DISEASE_DETAILS[predictedDiseaseName] || {
                 severity: "Unknown",
                 observedSymptoms: "Unable to load offline symptoms.",
@@ -126,7 +128,7 @@ const Scanner = ({ imagePreview, setImagePreview, isAnalyzing, setIsAnalyzing, s
               setDiseaseData({
                 name: predictedDiseaseName || "Unknown Disease",
                 confidence: `${confidenceScore}%`,
-                severity: null, 
+                severity: null,
                 symptoms: details.observedSymptoms,
                 remedy: details.remedy,
                 rootCause: "📡 Offline Mode: Please connect to the internet for deep AI root cause analysis.",
