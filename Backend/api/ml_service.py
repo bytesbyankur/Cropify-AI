@@ -1,8 +1,21 @@
+import os
+# 🔥 1. Tell TensorFlow to shut up and stop looking for GPUs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
+import tensorflow as tf
+# 🔥 2. Put a physical chokehold on TensorFlow's RAM usage
+tf.config.threading.set_inter_op_parallelism_threads(1)
+tf.config.threading.set_intra_op_parallelism_threads(1)
+
+# ... now the rest of your imports (numpy, json, PIL, etc.)
+import numpy as np
+import json
+# ...
 import numpy as np
 import json
 from PIL import Image
 from google import genai
-import os
 import gc # 🔥 Python's Garbage Collector
 import tf_keras as keras # 🔥 We need Keras here now to load the models
 from django.conf import settings # 🔥 To safely find the file paths
