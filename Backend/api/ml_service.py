@@ -2,14 +2,15 @@ import numpy as np
 import json
 from PIL import Image
 from google import genai
-from django.apps import apps
 import os
+import gc # 🔥 Python's Garbage Collector
+import tf_keras as keras # 🔥 We need Keras here now to load the models
+from django.conf import settings # 🔥 To safely find the file paths
 from dotenv import load_dotenv
 from gtts import gTTS
 import io
 import base64
 import traceback
-
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -19,41 +20,42 @@ AVAILABLE_KEYS = [
     os.getenv("API_KEY_3"),
     os.getenv("API_KEY_4"),
     os.getenv("API_KEY_5")
-
 ]
 
 VALID_KEYS = [key for key in AVAILABLE_KEYS if key]
 current_key_index = 0 # Start with the first key
+
+# 🔥 Define your labels here now, since apps.py is empty!
+DISEASE_LABELS = {
+    'apple': ["Apple - healthy", "Apple - Apple scab", "Apple - Cedar apple rust", "Apple - Black rot"],
+    'corn': ["Corn - healthy", "Corn - Northern Leaf Blight", "Corn - Common rust", "Corn - Cercospora leaf spot Gray leaf spot"],
+    'grapes': ["Grapes - healthy", "Grapes - Black rot", "Grapes - Esca (Black Measles)", "Grapes - Leaf Blight (Isariopsis Leaf Spot)"],
+    'potato': ["Potato - healthy", "Potato - Early blight", "Potato - Late blight"],
+    'tomato': ["Tomato - healthy", "Tomato - Early blight", "Tomato - Late blight", "Tomato - Bacterial spot", "Tomato - Leaf Mold", "Tomato - Septoria leaf spot", "Tomato - Spider mites", "Tomato - Target Spot", "Tomato - Tomato Yellow Leaf Curl Virus", "Tomato - Tomato mosaic virus"]
+}
 
 def generate_with_fallback(contents):
     """Wraps the Gemini call in a bulletproof auto-rotating loop."""
     global current_key_index
     attempts = 0
     
-    # Keep trying until we've tested every single key
     while attempts < len(VALID_KEYS):
         try:
-            # Create a fresh client using the CURRENT key
             client = genai.Client(api_key=VALID_KEYS[current_key_index])
-            
-            # Make the request to Gemini
             response = client.models.generate_content(
                 model='gemini-2.5-flash', 
                 contents=contents
             )
-            return response # ✅ If it works, return the response and exit!
+            return response 
 
         except Exception as e:
             print(f"\n⚠️ GEMINI KEY #{current_key_index + 1} FAILED: {e}")
             attempts += 1
-            
-            # 🔄 Rotate to the next key (Math trick to loop back to 0 at the end)
             current_key_index = (current_key_index + 1) % len(VALID_KEYS)
             
             if attempts < len(VALID_KEYS):
                 print(f"🔄 SILENTLY SWAPPING TO BACKUP KEY #{current_key_index + 1}...\n")
                 
-    # If the loop finishes, every single key is dead
     raise Exception("❌ ALL GEMINI BACKUP KEYS HAVE FAILED!")
 
 def generate_human_audio(disease_name, severity, symptoms, remedy, language="English"):
@@ -63,7 +65,6 @@ def generate_human_audio(disease_name, severity, symptoms, remedy, language="Eng
     try:
         script = f"Diagnosis: {disease_name}. Risk level: {severity}. {symptoms} Here is the treatment plan: {remedy}"
         
-        # Map your app languages to Google's language codes
         lang_map = {
             "English": "en",
             "Spanish": "es",
@@ -71,17 +72,14 @@ def generate_human_audio(disease_name, severity, symptoms, remedy, language="Eng
             "German": "de",
             "Indonesian": "id"
         }
-        # Fallback to English if not found
         tts_lang = lang_map.get(language, "en") 
         
         print(f"🎯 [2] Requesting Google Cloud Audio in language: {tts_lang}...")
         
-        # Request the audio from Google
         tts = gTTS(text=script, lang=tts_lang, slow=False)
         
         print("🎯 [3] Google responded! Encoding to Base64 in memory...")
         
-        # Save the audio directly to RAM (no messy files on your computer)
         fp = io.BytesIO()
         tts.write_to_fp(fp)
         audio_bytes = fp.getvalue()
@@ -149,7 +147,6 @@ def generate_medical_json(plant_type, disease_name, language="English"):
     try:
         response = generate_with_fallback(contents=prompt)
     except Exception as e:
-        # This catches the final error if ALL keys die, triggering your Hardcoded Fallback Dictionary!
         raise Exception(e)
     
     raw_text = response.text.strip()
@@ -174,12 +171,10 @@ def generate_medical_json(plant_type, disease_name, language="English"):
 def process_image_pipeline(image_file, language="English"):
     plant_type = get_plant_type(image_file)
     
-    api_config = apps.get_app_config('api')
-    
-    if not plant_type or plant_type not in api_config.expert_models:
+    if not plant_type or plant_type not in DISEASE_LABELS:
         return {"error": f"Could not confidently identify an apple, corn, potato, or tomato leaf."}
     
-    # 1. Run the CNN
+    # 1. Prepare the Image
     image_file.seek(0)
     img = Image.open(image_file).resize((224, 224))
     if img.mode != 'RGB':
@@ -188,19 +183,36 @@ def process_image_pipeline(image_file, language="English"):
     img_array = np.array(img) / 255.0
     img_array = np.expand_dims(img_array, axis=0)
 
-    selected_model = api_config.expert_models[plant_type]
-    selected_labels = api_config.class_labels[plant_type]
-
-    predictions = selected_model.predict(img_array, verbose=0)
-    predicted_index = np.argmax(predictions[0])
-    confidence = float(predictions[0][predicted_index] * 100)
-    disease_name = selected_labels[predicted_index]
+    # ==========================================
+    # 🔥 THE LAZY LOAD RAM SAVER
+    # ==========================================
+    print(f"🧠 Lazy loading the {plant_type} model...")
+    model_path = os.path.join(settings.BASE_DIR, 'ml_models', f'{plant_type} model.h5')
+    
+    try:
+        # Load the model, get the prediction, and immediately destroy it
+        model = keras.models.load_model(model_path)
+        predictions = model.predict(img_array, verbose=0)
+        
+        predicted_index = np.argmax(predictions[0])
+        confidence = float(predictions[0][predicted_index] * 100)
+        disease_name = DISEASE_LABELS[plant_type][predicted_index]
+        
+        # 🗑️ The Assassination Protocol (Freeing up Render's RAM)
+        del model
+        keras.backend.clear_session()
+        gc.collect() 
+        print("🗑️ Model wiped from RAM. Safe to proceed!")
+        
+    except Exception as e:
+        print(f"⚠️ Model Execution Error: {e}")
+        return {"error": f"Failed to run the local AI model for {plant_type}."}
 
     # 2. Run the LLM
     llm_data = generate_medical_json(plant_type, disease_name, language)
 
-    # 🔥 FIX 2: WE ACTUALLY CALL THE AUDIO GENERATOR HERE!
-    print("🚀 Firing off ElevenLabs Audio generation...")
+    # 3. Generate Audio
+    print("🚀 Firing off Audio generation...")
     audio_base64 = generate_human_audio(
         disease_name.title(),
         llm_data.get("severity", ""),
@@ -209,7 +221,7 @@ def process_image_pipeline(image_file, language="English"):
         language
     )
 
-    # 3. Build the final dictionary
+    # 4. Build the final dictionary
     return {
         "name": disease_name.title(),
         "confidence": f"{confidence:.1f}%",
@@ -218,5 +230,5 @@ def process_image_pipeline(image_file, language="English"):
         "symptoms": llm_data.get("symptoms", "N/A"),
         "reasons": llm_data.get("reasons", "N/A"),
         "remedy": llm_data.get("remedy", "N/A"),
-        "audio_data": audio_base64  # 🔥 Now this is actually attached!
+        "audio_data": audio_base64  
     }
